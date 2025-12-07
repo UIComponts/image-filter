@@ -72,6 +72,12 @@ const presets = {
   bright: {grayscale:0, sepia:0, blur:0, brightness:120, contrast:110, hue:0, saturate:120, invert:0, opacity: 100, shadowX: 0, shadowY: 0, shadowBlur: 0},
   cool: {grayscale:0, sepia:0, blur:0, brightness:100, contrast:100, hue:200, saturate:100, invert:0, opacity: 100, shadowX: 0, shadowY: 0, shadowBlur: 0},
   invert: {grayscale:0, sepia:0, blur:0, brightness:100, contrast:100, hue:0, saturate:100, invert:100, opacity: 100, shadowX: 0, shadowY: 0, shadowBlur: 0}
+  ,sharpen: {grayscale:0, sepia:0, blur:0, brightness:100, contrast:105, hue:0, saturate:105, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:70, vignette:0, tint:0}
+  ,vignette: {grayscale:0, sepia:0, blur:0, brightness:95, contrast:95, hue:0, saturate:95, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:0, vignette:60, tint:0}
+  ,warm: {grayscale:0, sepia:8, blur:0, brightness:103, contrast:102, hue:0, saturate:110, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:6, vignette:8, tint:30}
+  ,cool_sharp: {grayscale:0, sepia:0, blur:0, brightness:100, contrast:108, hue:200, saturate:105, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:40, vignette:10, tint:-30}
+  ,pop: {grayscale:0, sepia:0, blur:0, brightness:110, contrast:130, hue:0, saturate:150, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:20, vignette:0, tint:0}
+  ,soft: {grayscale:0, sepia:6, blur:0.5, brightness:98, contrast:92, hue:0, saturate:95, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:6, sharpen:0, vignette:18, tint:8}
 };
 
 // Update presets to include new filters (default 0 values added)
@@ -82,21 +88,21 @@ Object.keys(presets).forEach(p => {
 });
 
 function updateLabels() {
-  valueLabels.grayscale.textContent = controls.grayscale.value + '%';
-  valueLabels.sepia.textContent = controls.sepia.value + '%';
-  valueLabels.blur.textContent = controls.blur.value + 'px';
-  valueLabels.brightness.textContent = controls.brightness.value + '%';
-  valueLabels.contrast.textContent = controls.contrast.value + '%';
-  valueLabels.hue.textContent = controls.hue.value + '°';
-  valueLabels.saturate.textContent = controls.saturate.value + '%';
-  valueLabels.invert.textContent = controls.invert.value + '%';
-  valueLabels.opacity.textContent = controls.opacity.value + '%';
-  valueLabels.shadowX.textContent = controls.shadowX.value + 'px';
-  valueLabels.shadowY.textContent = controls.shadowY.value + 'px';
-  valueLabels.shadowBlur.textContent = controls.shadowBlur.value + 'px';
-  valueLabels.sharpen.textContent = controls.sharpen.value + '%';
-  valueLabels.vignette.textContent = controls.vignette.value + '%';
-  valueLabels.tint.textContent = controls.tint.value;
+  if (controls.grayscale && valueLabels.grayscale) valueLabels.grayscale.textContent = controls.grayscale.value + '%';
+  if (controls.sepia && valueLabels.sepia) valueLabels.sepia.textContent = controls.sepia.value + '%';
+  if (controls.blur && valueLabels.blur) valueLabels.blur.textContent = controls.blur.value + 'px';
+  if (controls.brightness && valueLabels.brightness) valueLabels.brightness.textContent = controls.brightness.value + '%';
+  if (controls.contrast && valueLabels.contrast) valueLabels.contrast.textContent = controls.contrast.value + '%';
+  if (controls.hue && valueLabels.hue) valueLabels.hue.textContent = controls.hue.value + '°';
+  if (controls.saturate && valueLabels.saturate) valueLabels.saturate.textContent = controls.saturate.value + '%';
+  if (controls.invert && valueLabels.invert) valueLabels.invert.textContent = controls.invert.value + '%';
+  if (controls.opacity && valueLabels.opacity) valueLabels.opacity.textContent = controls.opacity.value + '%';
+  if (controls.shadowX && valueLabels.shadowX) valueLabels.shadowX.textContent = controls.shadowX.value + 'px';
+  if (controls.shadowY && valueLabels.shadowY) valueLabels.shadowY.textContent = controls.shadowY.value + 'px';
+  if (controls.shadowBlur && valueLabels.shadowBlur) valueLabels.shadowBlur.textContent = controls.shadowBlur.value + 'px';
+  if (controls.sharpen && valueLabels.sharpen) valueLabels.sharpen.textContent = controls.sharpen.value + '%';
+  if (controls.vignette && valueLabels.vignette) valueLabels.vignette.textContent = controls.vignette.value + '%';
+  if (controls.tint && valueLabels.tint) valueLabels.tint.textContent = controls.tint.value;
 }
 
 function getFilterString() {
@@ -107,15 +113,39 @@ function drawImage() {
   if (!img || !img.src) return;
   canvas.width = originalWidth;
   canvas.height = originalHeight;
-  // Use context filter where supported to get same effect as CSS filters when exporting
+  // Draw to a temporary canvas first (so we can apply opacity/shadow correctly)
+  const tmp = document.createElement('canvas');
+  tmp.width = canvas.width;
+  tmp.height = canvas.height;
+  const tctx = tmp.getContext('2d');
+  tctx.clearRect(0,0,tmp.width,tmp.height);
+  // apply CSS-like filters where supported
+  try { tctx.filter = getFilterString(); } catch (e) { tctx.filter = 'none'; }
+  tctx.drawImage(img, 0, 0, tmp.width, tmp.height);
+
+  // now draw temp onto main canvas with opacity and shadow
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  try {
-    ctx.filter = getFilterString();
-  } catch (e) {
-    // older browsers may not support ctx.filter
-    ctx.filter = 'none';
+  ctx.save();
+  // opacity
+  const opacity = (controls.opacity ? Number(controls.opacity.value) : 100) / 100;
+  ctx.globalAlpha = opacity;
+  // shadows
+  const sx = controls.shadowX ? Number(controls.shadowX.value) : 0;
+  const sy = controls.shadowY ? Number(controls.shadowY.value) : 0;
+  const sblur = controls.shadowBlur ? Number(controls.shadowBlur.value) : 0;
+  if (sblur > 0 || sx !== 0 || sy !== 0) {
+    ctx.shadowOffsetX = sx;
+    ctx.shadowOffsetY = sy;
+    ctx.shadowBlur = sblur;
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  } else {
+    ctx.shadowColor = 'rgba(0,0,0,0)';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
   }
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(tmp, 0, 0);
+  ctx.restore();
 
   // apply post-processing effects: sharpen, vignette, tint
   applyPostEffects();
@@ -237,8 +267,9 @@ function loadFromFile(file) {
   reader.readAsDataURL(file);
 }
 
-// wire sliders
+// wire sliders (skip any missing controls)
 Object.values(controls).forEach(c => {
+  if (!c) return;
   c.addEventListener('input', () => {
     updateLabels();
     drawImage();
@@ -289,9 +320,14 @@ if (navToggle && navLinks) {
   navToggle.addEventListener('click', () => {
     const open = navLinks.classList.toggle('open');
     navToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    navToggle.classList.toggle('open', open);
   });
   // close menu when a link is clicked
   Array.from(navLinks.querySelectorAll('a')).forEach(a => {
-    a.addEventListener('click', () => navLinks.classList.remove('open'));
+    a.addEventListener('click', () => {
+      navLinks.classList.remove('open');
+      navToggle.classList.remove('open');
+      navToggle.setAttribute('aria-expanded', 'false');
+    });
   });
 }

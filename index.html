@@ -10,7 +10,7 @@
   <header class="navbar">
     <div class="nav-inner">
       <div class="brand">Image Filter</div>
-      <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-controls="main-nav">
+      <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Menu">
         <span class="bar"></span>
         <span class="bar"></span>
         <span class="bar"></span>
@@ -22,30 +22,28 @@
       </nav>
     </div>
   </header>
-
   <div class="container">
     <h1>Image Filter</h1>
 
-    <div class="controls">
+    <div class="controls card">
       <div class="top-row">
-        <input id="fileInput" type="file" accept="image/*">
-        <select id="presetSelect">
+        <input id="fileInput" type="file" accept="image/*" class="file-input">
+        <select id="presetSelect" class="select">
           <option value="none">Preset: None</option>
           <option value="grayscale">Grayscale</option>
           <option value="vintage">Vintage (sepia)</option>
           <option value="bright">Bright</option>
           <option value="cool">Cool (blue tint)</option>
           <option value="invert">Invert</option>
-          <option value="Opacity">Opacity</option>
-          <option value="shadowX">Shadow X</option>
-          <option value="shadowY">Shadow Y</option>
-          <option value="shadowBlur">Shadow Blur</option>
-          <option value="sharpen">Sharpen</option>
-          <option value="Vignette">Vignette</option>
-          <option value="tint">Tint (Temperature)</option>
+          <option value="sharpen">Sharpen (Strong)</option>
+          <option value="vignette">Vignette (Dark Edges)</option>
+          <option value="warm">Warm / Portrait</option>
+          <option value="cool_sharp">Cool + Sharpen</option>
+          <option value="pop">Pop (High Contrast)</option>
+          <option value="soft">Soft / Film</option>
         </select>
-        <button id="resetBtn">Reset</button>
-        <button id="downloadBtn">Download</button>
+        <button id="resetBtn" class="btn">Reset</button>
+        <button id="downloadBtn" class="btn primary">Download</button>
       </div>
 
       <div class="sliders">
@@ -67,9 +65,9 @@
       </div>
     </div>
 
-    <div class="canvas-wrap">
+    <div class="canvas-wrap card">
       <canvas id="canvas">Your browser does not support canvas.</canvas>
-      <div id="placeholder">Please uplod your image </div>
+      <div id="placeholder">Please upload your image</div>
     </div>
 
     <p class="help">Image loaded to canvas — use sliders to change filters, then click <strong>Download</strong>.</p>
