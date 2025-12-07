@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Image Filter</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-inner">
+      <div class="brand">Image Filter</div>
+      <button id="navToggle" class="nav-toggle" aria-expanded="false" aria-controls="main-nav">
+        <span class="bar"></span>
+        <span class="bar"></span>
+        <span class="bar"></span>
+      </button>
+      <nav id="main-nav" class="nav-links" aria-label="Main navigation">
+        <a href="#" class="active">Home</a>
+        <a href="#">About</a>
+        <a href="#">Contact</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="container">
+    <h1>Image Filter</h1>
+
+    <div class="controls">
+      <div class="top-row">
+        <input id="fileInput" type="file" accept="image/*">
+        <select id="presetSelect">
+          <option value="none">Preset: None</option>
+          <option value="grayscale">Grayscale</option>
+          <option value="vintage">Vintage (sepia)</option>
+          <option value="bright">Bright</option>
+          <option value="cool">Cool (blue tint)</option>
+          <option value="invert">Invert</option>
+          <option value="Opacity">Opacity</option>
+          <option value="shadowX">Shadow X</option>
+          <option value="shadowY">Shadow Y</option>
+          <option value="shadowBlur">Shadow Blur</option>
+          <option value="sharpen">Sharpen</option>
+          <option value="Vignette">Vignette</option>
+          <option value="tint">Tint (Temperature)</option>
+        </select>
+        <button id="resetBtn">Reset</button>
+        <button id="downloadBtn">Download</button>
+      </div>
+
+      <div class="sliders">
+        <label>Grayscale <input id="grayscale" type="range" min="0" max="100" value="0"> <span id="grayscaleVal">0%</span></label>
+        <label>Sepia <input id="sepia" type="range" min="0" max="100" value="0"> <span id="sepiaVal">0%</span></label>
+        <label>Blur <input id="blur" type="range" min="0" max="10" step="0.5" value="0"> <span id="blurVal">0px</span></label>
+        <label>Brightness <input id="brightness" type="range" min="0" max="200" value="100"> <span id="brightnessVal">100%</span></label>
+        <label>Contrast <input id="contrast" type="range" min="0" max="200" value="100"> <span id="contrastVal">100%</span></label>
+        <label>Hue <input id="hue" type="range" min="0" max="360" value="0"> <span id="hueVal">0°</span></label>
+        <label>Saturate <input id="saturate" type="range" min="0" max="300" value="100"> <span id="saturateVal">100%</span></label>
+        <label>Invert <input id="invert" type="range" min="0" max="100" value="0"> <span id="invertVal">0%</span></label>
+        <label>Opacity <input id="opacity" type="range" min="0" max="100" value="100"> <span id="opacityVal">100%</span></label>
+        <label>Shadow X <input id="shadowX" type="range" min="-20" max="20" value="0"> <span id="shadowXVal">0px</span></label>
+        <label>Shadow Y <input id="shadowY" type="range" min="-20" max="20" value="0"> <span id="shadowYVal">0px</span></label>
+        <label>Shadow Blur <input id="shadowBlur" type="range" min="0" max="40" value="0"> <span id="shadowBlurVal">0px</span></label>
+        <label>Sharpen <input id="sharpen" type="range" min="0" max="100" value="0"> <span id="sharpenVal">0%</span></label>
+        <label>Vignette <input id="vignette" type="range" min="0" max="100" value="0"> <span id="vignetteVal">0%</span></label>
+        <label>Tint (Temperature) <input id="tint" type="range" min="-100" max="100" value="0"> <span id="tintVal">0</span></label>
+      </div>
+    </div>
+
+    <div class="canvas-wrap">
+      <canvas id="canvas">Your browser does not support canvas.</canvas>
+      <div id="placeholder">Please uplod your image </div>
+    </div>
+
+    <p class="help">Image loaded to canvas — use sliders to change filters, then click <strong>Download</strong>.</p>
+  </div>
+
+  <script src="script.js"></script>
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>© 2025 Image Filter</div>
+      <div class="footer-links"><a href="#">Privacy</a> · <a href="#">Terms</a></div>
+    </div>
+  </footer>
+
+</body>
+</html>
