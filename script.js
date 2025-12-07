@@ -46,6 +46,12 @@ const downloadBtn = document.getElementById('downloadBtn');
 let img = new Image();
 let originalWidth = 0;
 let originalHeight = 0;
+let previewWidth = 0;
+let previewHeight = 0;
+let _rafId = null;
+let _drawDebounce = null;
+let _heavyDebounce = null;
+let _heavyEffectsNow = false;
 
 const defaults = {
   grayscale: 0,
@@ -111,16 +117,19 @@ function getFilterString() {
 
 function drawImage() {
   if (!img || !img.src) return;
-  canvas.width = originalWidth;
-  canvas.height = originalHeight;
+  // ensure preview canvas size is set for current layout
+  if (!previewWidth || !previewHeight) updatePreviewSize();
+  // canvas internal pixel size is already set in updatePreviewSize
   // Draw to a temporary canvas first (so we can apply opacity/shadow correctly)
   const tmp = document.createElement('canvas');
+  // tmp uses the canvas internal pixel size
   tmp.width = canvas.width;
   tmp.height = canvas.height;
   const tctx = tmp.getContext('2d');
   tctx.clearRect(0,0,tmp.width,tmp.height);
   // apply CSS-like filters where supported
   try { tctx.filter = getFilterString(); } catch (e) { tctx.filter = 'none'; }
+  // draw image scaled to preview internal pixels
   tctx.drawImage(img, 0, 0, tmp.width, tmp.height);
 
   // now draw temp onto main canvas with opacity and shadow
@@ -151,14 +160,45 @@ function drawImage() {
   applyPostEffects();
 }
 
+// compute preview size based on container and device
+function updatePreviewSize() {
+  if (!originalWidth || !originalHeight) return;
+  const wrap = document.querySelector('.canvas-wrap');
+  const maxW = wrap ? Math.max(160, wrap.clientWidth - 12) : Math.min(originalWidth, 520);
+  const scale = Math.min(1, maxW / originalWidth);
+  previewWidth = Math.max(120, Math.round(originalWidth * scale));
+  previewHeight = Math.max(80, Math.round(originalHeight * scale));
+
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  // set CSS size
+  canvas.style.width = previewWidth + 'px';
+  canvas.style.height = previewHeight + 'px';
+  // set internal pixel size
+  canvas.width = Math.round(previewWidth * dpr);
+  canvas.height = Math.round(previewHeight * dpr);
+  // scale drawing operations to DPR
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+
+// update preview size on resize (debounced)
+let _resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(_resizeTimer);
+  _resizeTimer = setTimeout(() => {
+    updatePreviewSize();
+    drawImage();
+  }, 120);
+});
 // Post-processing: sharpen (convolution mix), vignette (radial gradient), tint (color overlay)
 function applyPostEffects() {
-  const s = Number(controls.sharpen.value);
+  const s = Number((controls.sharpen && controls.sharpen.value) || 0);
   const v = Number(controls.vignette.value);
   const t = Number(controls.tint.value);
 
   // operate on current canvas pixels
-  if (s > 0) {
+  // Apply sharpen only when heavy effects are enabled (debounced) or during export
+  if (s > 0 && _heavyEffectsNow) {
     try {
       // get original pixels
       const orig = ctx.getImageData(0,0,canvas.width,canvas.height);
@@ -251,14 +291,8 @@ function loadFromFile(file) {
     img.onload = function() {
       originalWidth = img.width;
       originalHeight = img.height;
-      // fit canvas size for display scaling but still use original pixels for download
-      const maxW = 900;
-      const maxH = 640;
-      let scale = Math.min(1, maxW / originalWidth, maxH / originalHeight);
-      // for drawing we keep original pixel size on canvas for accurate download
-      canvas.style.maxWidth = '100%';
-      canvas.width = originalWidth;
-      canvas.height = originalHeight;
+      // compute preview size for current layout (preview), keep originalWidth/Height for export
+      updatePreviewSize();
       placeholder.style.display = 'none';
       drawImage();
     };
@@ -267,12 +301,32 @@ function loadFromFile(file) {
   reader.readAsDataURL(file);
 }
 
-// wire sliders (skip any missing controls)
+// schedule draw: quick preview now, heavy effects after quiet period
+function scheduleDraw(delay = 250, immediatePreview = true) {
+  // cancel RAF for previous preview
+  if (_rafId) cancelAnimationFrame(_rafId);
+  if (immediatePreview) {
+    _rafId = requestAnimationFrame(() => {
+      _heavyEffectsNow = false;
+      drawImage();
+    });
+  }
+  // clear previous heavy timer
+  if (_heavyDebounce) clearTimeout(_heavyDebounce);
+  _heavyDebounce = setTimeout(() => {
+    _heavyEffectsNow = true;
+    drawImage();
+    // reset heavy flag shortly after drawing
+    setTimeout(() => { _heavyEffectsNow = false; }, 50);
+  }, delay);
+}
+
+// wire sliders (skip any missing controls) — use scheduleDraw to avoid freeze
 Object.values(controls).forEach(c => {
   if (!c) return;
   c.addEventListener('input', () => {
     updateLabels();
-    drawImage();
+    scheduleDraw(300, true);
   });
 });
 
@@ -288,7 +342,7 @@ presetSelect.addEventListener('change', (e) => {
     if (controls[k]) controls[k].value = p[k];
   });
   updateLabels();
-  drawImage();
+  scheduleDraw(200, true);
 });
 
 resetBtn.addEventListener('click', () => {
@@ -297,16 +351,86 @@ resetBtn.addEventListener('click', () => {
   });
   presetSelect.value = 'none';
   updateLabels();
-  drawImage();
+  scheduleDraw(200, true);
 });
 
 downloadBtn.addEventListener('click', () => {
   if (!img || !img.src) return alert('कृपया पहले कोई इमेज अपलोड करें');
-  // ensure canvas has image drawn with current filters
-  drawImage();
+  // Render full-resolution image into a temporary full-size canvas, apply same pipeline, then download
+  const full = document.createElement('canvas');
+  full.width = originalWidth;
+  full.height = originalHeight;
+  const fctx = full.getContext('2d');
+
+  // 1) draw with filters to temp
+  const tmp = document.createElement('canvas');
+  tmp.width = originalWidth;
+  tmp.height = originalHeight;
+  const tctx = tmp.getContext('2d');
+  try { tctx.filter = getFilterString(); } catch (e) { tctx.filter = 'none'; }
+  tctx.drawImage(img, 0, 0, originalWidth, originalHeight);
+
+  // 2) draw tmp to final with opacity and shadow
+  fctx.clearRect(0,0,full.width, full.height);
+  fctx.save();
+  const opacity = (controls.opacity ? Number(controls.opacity.value) : 100) / 100;
+  fctx.globalAlpha = opacity;
+  const sx = controls.shadowX ? Number(controls.shadowX.value) : 0;
+  const sy = controls.shadowY ? Number(controls.shadowY.value) : 0;
+  const sblur = controls.shadowBlur ? Number(controls.shadowBlur.value) : 0;
+  if (sblur > 0 || sx !== 0 || sy !== 0) {
+    fctx.shadowOffsetX = sx;
+    fctx.shadowOffsetY = sy;
+    fctx.shadowBlur = sblur;
+    fctx.shadowColor = 'rgba(0,0,0,0.35)';
+  }
+  fctx.drawImage(tmp, 0, 0);
+  fctx.restore();
+
+  // 3) post effects on full canvas
+  const s = Number(controls.sharpen ? controls.sharpen.value : 0);
+  const v = Number(controls.vignette ? controls.vignette.value : 0);
+  const t = Number(controls.tint ? controls.tint.value : 0);
+
+  if (s > 0) {
+    try {
+      const orig = fctx.getImageData(0,0,full.width, full.height);
+      const conv = convolveSharpen(orig);
+      const mix = s / 100;
+      const out = mixImageData(orig, conv, mix);
+      fctx.putImageData(out, 0, 0);
+    } catch (e) {
+      console.warn('Sharpen failed during export', e);
+    }
+  }
+
+  if (t !== 0) {
+    const alpha = Math.min(0.6, Math.abs(t) / 200 + 0.05);
+    fctx.save();
+    fctx.globalCompositeOperation = 'overlay';
+    fctx.fillStyle = t > 0 ? `rgba(255,160,64,${alpha})` : `rgba(64,160,255,${alpha})`;
+    fctx.fillRect(0,0,full.width, full.height);
+    fctx.restore();
+  }
+
+  if (v > 0) {
+    fctx.save();
+    const cx = full.width/2;
+    const cy = full.height/2;
+    const maxr = Math.sqrt(cx*cx + cy*cy);
+    const grad = fctx.createRadialGradient(cx, cy, maxr*0.2, cx, cy, maxr);
+    const gAlpha = Math.min(0.85, v/100 * 0.85);
+    grad.addColorStop(0, `rgba(0,0,0,0)`);
+    grad.addColorStop(1, `rgba(0,0,0,${gAlpha})`);
+    fctx.globalCompositeOperation = 'multiply';
+    fctx.fillStyle = grad;
+    fctx.fillRect(0,0,full.width, full.height);
+    fctx.restore();
+  }
+
   const link = document.createElement('a');
   link.download = 'filtered-image.png';
-  link.href = canvas.toDataURL('image/png');
+  link.href = full.toDataURL('image/png');
   link.click();
 });
 
