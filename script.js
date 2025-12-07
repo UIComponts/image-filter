@@ -161,7 +161,10 @@ function drawImage() {
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
   }
-  ctx.drawImage(tmp, 0, 0);
+  // Draw using CSS pixel dimensions (not internal pixel size) because ctx has a DPR transform applied.
+  const cssW = previewWidth || Math.round(canvas.width / (window.devicePixelRatio || 1));
+  const cssH = previewHeight || Math.round(canvas.height / (window.devicePixelRatio || 1));
+  ctx.drawImage(tmp, 0, 0, cssW, cssH);
   ctx.restore();
 
   // apply post-processing effects: sharpen, vignette, tint
