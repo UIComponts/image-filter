@@ -19,6 +19,7 @@ const controls = {
   ,sharpen: document.getElementById('sharpen')
   ,vignette: document.getElementById('vignette')
   ,tint: document.getElementById('tint')
+  ,skin: document.getElementById('skin')
 };
 
 const valueLabels = {
@@ -37,6 +38,7 @@ const valueLabels = {
   ,sharpen: document.getElementById('sharpenVal')
   ,vignette: document.getElementById('vignetteVal')
   ,tint: document.getElementById('tintVal')
+  ,skin: document.getElementById('skinVal')
 };
 
 const presetSelect = document.getElementById('presetSelect');
@@ -69,6 +71,7 @@ const defaults = {
   ,sharpen: 0
   ,vignette: 0
   ,tint: 0
+  ,skin: 0
 };
 
 const presets = {
@@ -86,11 +89,15 @@ const presets = {
   ,soft: {grayscale:0, sepia:6, blur:0.5, brightness:98, contrast:92, hue:0, saturate:95, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:6, sharpen:0, vignette:18, tint:8}
 };
 
+// Add a preset for skin smoothing
+presets.skin = {grayscale:0, sepia:0, blur:0, brightness:100, contrast:100, hue:0, saturate:100, invert:0, opacity:100, shadowX:0, shadowY:0, shadowBlur:0, sharpen:0, vignette:0, tint:0, skin:60};
+
 // Update presets to include new filters (default 0 values added)
 Object.keys(presets).forEach(p => {
   presets[p].sharpen = presets[p].sharpen || 0;
   presets[p].vignette = presets[p].vignette || 0;
   presets[p].tint = presets[p].tint || 0;
+  presets[p].skin = presets[p].skin || 0;
 });
 
 function updateLabels() {
@@ -109,6 +116,7 @@ function updateLabels() {
   if (controls.sharpen && valueLabels.sharpen) valueLabels.sharpen.textContent = controls.sharpen.value + '%';
   if (controls.vignette && valueLabels.vignette) valueLabels.vignette.textContent = controls.vignette.value + '%';
   if (controls.tint && valueLabels.tint) valueLabels.tint.textContent = controls.tint.value;
+  if (controls.skin && valueLabels.skin) valueLabels.skin.textContent = controls.skin.value + '%';
 }
 
 function getFilterString() {
@@ -195,8 +203,19 @@ function applyPostEffects() {
   const s = Number((controls.sharpen && controls.sharpen.value) || 0);
   const v = Number(controls.vignette.value);
   const t = Number(controls.tint.value);
+  const skinStrength = Number((controls.skin && controls.skin.value) || 0);
 
   // operate on current canvas pixels
+  // Apply skin smoothing before sharpen. We run a cheap preview smoothing when not in heavy mode,
+  // and a higher-quality smoothing when _heavyEffectsNow is true (or during export which uses full-res path).
+  if (skinStrength > 0) {
+    try {
+      applySkinSmoothToCanvas(ctx, canvas.width, canvas.height, skinStrength, _heavyEffectsNow, canvas);
+    } catch (e) {
+      console.warn('Skin smoothing failed', e);
+    }
+  }
+
   // Apply sharpen only when heavy effects are enabled (debounced) or during export
   if (s > 0 && _heavyEffectsNow) {
     try {
@@ -301,6 +320,103 @@ function loadFromFile(file) {
   reader.readAsDataURL(file);
 }
 
+// Skin smoothing: downscale, blur, compute edge mask, blend, then upscale back
+function applySkinSmoothToCanvas(ctxMain, w, h, strength, highQuality, sourceCanvas) {
+  // strength: 0-100
+  const s = Math.max(0, Math.min(100, strength)) / 100;
+  if (s === 0) return;
+
+  // choose small scale for preview, larger for heavy/full
+  const scale = highQuality ? 0.35 : 0.18;
+  const sw = Math.max(64, Math.round(w * scale));
+  const sh = Math.max(64, Math.round(h * scale));
+
+  // create small canvases
+  const smallOrig = document.createElement('canvas');
+  smallOrig.width = sw; smallOrig.height = sh;
+  const sctx = smallOrig.getContext('2d');
+
+  // draw current main canvas content scaled down
+  // use main canvas content as source so that CSS-like filters already applied are included
+  const src = sourceCanvas || canvas;
+  sctx.drawImage(src, 0, 0, w, h, 0, 0, sw, sh);
+
+  // create blurred small canvas
+  const smallBlur = document.createElement('canvas');
+  smallBlur.width = sw; smallBlur.height = sh;
+  const bctx = smallBlur.getContext('2d');
+  // blur radius proportional to strength
+  const radius = Math.max(1, Math.round((s * 1.0) * (highQuality ? 8 : 6)));
+  try { bctx.filter = `blur(${radius}px)`; } catch(e) { bctx.filter = 'none'; }
+  bctx.drawImage(smallOrig, 0, 0);
+
+  // get image data
+  const oData = sctx.getImageData(0,0,sw,sh);
+  const bData = bctx.getImageData(0,0,sw,sh);
+  const od = oData.data, bd = bData.data;
+
+  // compute simple edge strength map using gradient on luminance
+  const edge = new Float32Array(sw*sh);
+  let maxEdge = 0;
+  for (let y=1;y<sh-1;y++){
+    for (let x=1;x<sw-1;x++){
+      const i = (y*sw + x) * 4;
+      const l = (od[i]*0.299 + od[i+1]*0.587 + od[i+2]*0.114);
+      const lL = (od[i-4]*0.299 + od[i-3]*0.587 + od[i-2]*0.114);
+      const lR = (od[i+4]*0.299 + od[i+5]*0.587 + od[i+6]*0.114);
+      const lU = (od[i-4*sw]*0.299 + od[i-4*sw+1]*0.587 + od[i-4*sw+2]*0.114);
+      const lD = (od[i+4*sw]*0.299 + od[i+4*sw+1]*0.587 + od[i+4*sw+2]*0.114);
+      const gx = lR - lL;
+      const gy = lD - lU;
+      const e = Math.hypot(gx, gy);
+      edge[y*sw + x] = e;
+      if (e > maxEdge) maxEdge = e;
+    }
+  }
+
+  // blend blurred and original based on edge (preserve edges)
+  const out = new Uint8ClampedArray(od.length);
+  const invMax = maxEdge > 0 ? 1 / maxEdge : 0;
+  for (let y=0;y<sh;y++){
+    for (let x=0;x<sw;x++){
+      const idx = y*sw + x;
+      const i = idx*4;
+      const e = edge[idx] * invMax; // 0..1 edge strength
+      const preserve = Math.min(1, Math.max(0, e));
+      // weight for blur: higher in smooth regions -> (1 - preserve)
+      const wBlur = (1 - preserve) * s;
+      out[i]   = Math.round(od[i]   * (1 - wBlur) + bd[i]   * wBlur);
+      out[i+1] = Math.round(od[i+1] * (1 - wBlur) + bd[i+1] * wBlur);
+      out[i+2] = Math.round(od[i+2] * (1 - wBlur) + bd[i+2] * wBlur);
+      out[i+3] = od[i+3];
+    }
+  }
+
+  // put back into small canvas
+  const outImg = new ImageData(out, sw, sh);
+  sctx.putImageData(outImg, 0, 0);
+
+  // draw upscaled blended result over main canvas
+  ctxMain.save();
+  // draw the blended small canvas scaled to the main canvas.
+  // For preview (not highQuality) draw using CSS-size previewWidth/previewHeight so current transform applies.
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  let destW = w; let destH = h;
+  if (!highQuality) {
+    // convert internal pixel size to CSS pixels
+    destW = previewWidth || Math.round(w / dpr);
+    destH = previewHeight || Math.round(h / dpr);
+  }
+  // Draw the blended small canvas upscaled to the main canvas.
+  // Temporarily reset transform so we draw using internal pixel coordinates (avoids DPR/scale confusion).
+  ctxMain.save();
+  ctxMain.setTransform(1,0,0,1,0,0);
+  // w and h are expected to be the internal pixel dimensions of the target canvas
+  ctxMain.drawImage(smallOrig, 0, 0, sw, sh, 0, 0, w, h);
+  ctxMain.restore();
+  ctxMain.restore();
+}
+
 // schedule draw: quick preview now, heavy effects after quiet period
 function scheduleDraw(delay = 250, immediatePreview = true) {
   // cancel RAF for previous preview
@@ -391,6 +507,16 @@ downloadBtn.addEventListener('click', () => {
   const s = Number(controls.sharpen ? controls.sharpen.value : 0);
   const v = Number(controls.vignette ? controls.vignette.value : 0);
   const t = Number(controls.tint ? controls.tint.value : 0);
+  const skinStrength = Number(controls.skin ? controls.skin.value : 0);
+
+  // apply skin smoothing on full-res before sharpen
+  if (skinStrength > 0) {
+    try {
+      applySkinSmoothToCanvas(fctx, full.width, full.height, skinStrength, true, tmp);
+    } catch (e) {
+      console.warn('Skin smoothing failed during export', e);
+    }
+  }
 
   if (s > 0) {
     try {
